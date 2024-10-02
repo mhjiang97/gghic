@@ -1,0 +1,239 @@
+---
+title: "gghic"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{gghic}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+```{r setup}
+load_pkg <- function(pkgs) {
+  for (pkg in pkgs) {
+    if (!suppressWarnings(suppressMessages(require(pkg, character.only = TRUE)))) {
+      install.packages(pkg)
+      if (!suppressWarnings(suppressMessages(require(pkg, character.only = TRUE)))) {
+        if (!requireNamespace("BiocManager", quietly = TRUE)) {
+          install.packages("BiocManager")
+        }
+        BiocManager::install(pkg)
+        suppressMessages(require(pkg, character.only = TRUE))
+      }
+    }
+  }
+}
+
+load_pkg(
+  c(
+    "ggplot2",
+    "scales",
+    "ggrastr",
+    "glue",
+    "HiCExperiment",
+    "InteractionSet",
+    "tibble",
+    "dplyr",
+    "tidyr"
+  )
+)
+
+setwd(glue::glue("{this.path::here()}/.."))
+devtools::document()
+devtools::load_all()
+
+options(digits = 6)
+```
+
+```{r}
+theme_hm <- function(hide_y = FALSE) {
+  `%+replace%` <- ggplot2::`%+replace%`
+  t <- ggplot2::theme_bw() %+replace%
+    ggplot2::theme(
+      panel.grid.minor = ggplot2::element_blank(),
+      panel.grid.major = ggplot2::element_blank()
+    )
+  if (hide_y) {
+    t <- t %+replace%
+      ggplot2::theme(
+        axis.title.y = ggplot2::element_blank(),
+        axis.text.y = ggplot2::element_blank(),
+        axis.ticks.y = ggplot2::element_blank(),
+        panel.border = ggplot2::element_blank(),
+        axis.line.x.bottom = ggplot2::element_line(color = "black")
+      )
+  }
+  t
+}
+
+fmt_axis_hm <- scales::unit_format(unit = "M", scale = 1e-6)
+
+colors_hm <- function() {
+  colors_hm <- c(
+    "#FFFEF9", "#FCF9CE", "#FFF2A9", "#FDE188",
+    "#FFCA67", "#FAAA4B", "#F78E40", "#F15C34",
+    "#ED3024", "#D42027", "#B01F29", "#7A1128", "#1A0A10"
+  )
+  ggplot2::scale_fill_gradientn(colors = colors_hm, na.value = "#FFFFFF")
+}
+```
+
+```{r message=FALSE, warning=FALSE}
+cf <- HiCExperiment::CoolFile(
+  system.file("extdata", "cooler", "chr4_11-1mb.cool", package = "gghic")
+)
+hic <- HiCExperiment::import(cf)
+
+gis <- InteractionSet::interactions(hic)
+gis$score <- log10(gis$balanced)
+
+x <- tibble::as_tibble(gis)
+
+scores <- x$score[
+  InteractionSet::pairdist(gis) != 0 & !is.na(InteractionSet::pairdist(gis) != 0)
+]
+scores <- scores[!is.na(scores) & !is.infinite(scores)]
+M <- max(scores)
+m <- min(scores)
+limits <- c(m, M)
+
+x$score <- scales::oob_squish(x$score, c(m, M))
+```
+
+```{r}
+x |>
+  dplyr::filter(seqnames1 == "chr11" & seqnames2 == "chr11") |>
+  tidyr::drop_na(score) |>
+  # dplyr::slice(1:5) |>
+  dplyr::mutate(
+    x = center1, # floor(end1 - (end1 - start1) / 2),
+    y = center2 # floor(end2 - (end2 - start2) / 2)
+  ) |>
+  ggplot2::ggplot(ggplot2::aes(x, y, fill = score)) +
+  ggrastr::geom_tile_rast(
+    raster.dpi = 300,
+    width = GenomicRanges::width(gis)[[1]][1],
+    height = GenomicRanges::width(gis)[[1]][1]
+  ) +
+  ggplot2::scale_fill_gradientn(
+    colors = colors_hm,
+    na.value = "#FFFFFF",
+    limits = limits
+  ) +
+  ggplot2::coord_fixed() +
+  ggplot2::scale_x_continuous(
+    expand = c(0, 0),
+    labels = scales::unit_format(unit = "M", scale = 1e-6),
+    position = "top"
+  ) +
+  ggplot2::scale_y_continuous(
+    expand = c(0, 0),
+    labels = scales::unit_format(unit = "M", scale = 1e-6)
+  ) +
+  ggplot2::labs(x = unique(x$seqnames1), y = unique(x$seqnames2)) +
+  theme_hm()
+```
+
+```{r}
+x |>
+  dplyr::filter(seqnames1 == "chr11", seqnames2 == "chr11") |>
+  tidyr::drop_na(score) |>
+  # dplyr::slice(1:5) |>
+  dplyr::mutate(
+    diag = center2 - center1,
+    x = (center1 + center2) / 2 # center1 + ((center2 - center1) / 2),
+  ) |>
+  ggplot2::ggplot(ggplot2::aes(x, diag, fill = score)) +
+  ggrastr::geom_tile_rast(
+    raster.dpi = 300,
+    width = GenomicRanges::width(gis)[[1]][1],
+    height = GenomicRanges::width(gis)[[1]][1]
+  ) +
+  # ggplot2::geom_tile(
+  #   width = GenomicRanges::width(gis)[[1]][1],
+  #   height = GenomicRanges::width(gis)[[1]][1]
+  # ) +
+  ggplot2::scale_fill_gradientn(
+    colors = colors_hm,
+    na.value = "#FFFFFF",
+    limits = limits
+  ) +
+  ggplot2::scale_x_continuous(
+    expand = c(0, 0), labels = scales::unit_format(unit = "M", scale = 1e-6)
+  ) +
+  ggplot2::scale_y_continuous(
+    expand = c(0, 0), labels = scales::unit_format(unit = "M", scale = 1e-6)
+  ) +
+  ggplot2::coord_fixed(ratio = 0.5) +
+  ggplot2::labs(x = "Genomic location", y = NULL) +
+  theme_hm()
+```
+
+```{r}
+x |>
+  dplyr::filter(seqnames1 == "chr11", seqnames2 == "chr11") |>
+  tidyr::drop_na(score) |>
+  # dplyr::slice(1:5) |>
+  ggplot2::ggplot(
+    ggplot2::aes(
+      seqnames1 = seqnames1, start1 = start1, end1 = end1,
+      seqnames2 = seqnames2, start2 = start2, end2 = end2,
+      fill = score
+    )
+  ) +
+  geom_hic() +
+  colors_hm() +
+  theme_hm(hide_y = TRUE) +
+  ggplot2::coord_fixed() +
+  ggplot2::scale_x_continuous(expand = ggplot2::waiver(), labels = fmt_axis_hm) +
+  ggplot2::scale_y_continuous(expand = ggplot2::waiver(), labels = fmt_axis_hm) +
+  ggplot2::labs(x = NULL, y = NULL)
+```
+
+```{r}
+x |>
+  dplyr::filter(
+    seqnames1 == "chr4", seqnames2 == "chr4"
+  ) |>
+  gghic(ideogram = TRUE, genome = "hg19", highlight = FALSE)
+```
+
+```{r}
+x |>
+  dplyr::filter(
+    seqnames1 == "chr4", seqnames2 == "chr4",
+    center1 > 10000000, center1 < 15000000,
+    center2 > 10000000, center2 < 15000000
+  ) |>
+  gghic(ideogram = TRUE, genome = "hg19", highlight = TRUE, fontsize = 10)
+```
+
+```{r}
+file_gtf <- "~/doc/reference/hg19/gtf/gencode.v45lift37.annotation.gtf"
+
+x |>
+  dplyr::filter(
+    seqnames1 == "chr11", seqnames2 == "chr11",
+    center1 > 67000000, center1 < 67100000,
+    center2 > 67000000, center2 < 67100000
+  ) |>
+  ggplot2::ggplot(
+    ggplot2::aes(
+      seqnames1 = seqnames1, start1 = start1, end1 = end1,
+      seqnames2 = seqnames2, start2 = start2, end2 = end2,
+      fill = score
+    )
+  ) +
+  # geom_hic() +
+  geom_annotation(
+    gtf_file = file_gtf, ratio_height = 1 / 50, fontsize = 10, maxgap = 1000000
+  ) +
+  ggplot2::coord_fixed()
+```
+
