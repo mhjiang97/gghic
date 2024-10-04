@@ -12,6 +12,7 @@ geom_ideogram(
   na.rm = FALSE,
   show.legend = NA,
   inherit.aes = TRUE,
+  check.param = FALSE,
   ...
 )
 }
@@ -23,6 +24,8 @@ geom_ideogram(
 \item \code{genome}: The genome name. Default is \code{"hg19"}.
 \item \code{highlight}: Whether to highlight the boundary of the chromosome. Default is \code{TRUE}.
 \item \code{fontsize}: The font size of the chromosome name. Default is \code{10}.
+\item \code{width_ratio}: The ratio of the width of each chromosome ideogram relative to the height of the Hi-C plot. Default is \code{1/30}.
+\item \code{length_ratio}: The ratio of the length of each chromosome ideogram relative to the width of the Hi-C plot. Default is \code{0.8}.
 }}
 }
 \value{

@@ -1,20 +1,20 @@
-#' @importFrom rappdirs user_cache_dir
-#' @importFrom glue glue
-#' @importFrom rtracklayer browserSession genome ucscTableQuery getTable
-#' @importFrom dplyr filter
-#' @importFrom biovizBase getBioColor
-retrive_cytoband <- function(data, genome) {
-  dir_cache <- rappdirs::user_cache_dir(appname = name_pkg)
-  if (!file.exists(glue::glue("{dir_cache}/cytoBand.{genome}.rds"))) {
+ensure_cytoband <- function(genome) {
+  path_cytoband <- glue::glue("{dir_cache}/cytoBand.{genome}.rds")
+  if (!file.exists(path_cytoband)) {
     session <- rtracklayer::browserSession()
     rtracklayer::genome(session) <- genome
     query <- rtracklayer::ucscTableQuery(session, table = "cytoBandIdeo")
     bands_all <- rtracklayer::getTable(query)
-    if (!dir.exists(dir_cache)) dir.create(dir_cache)
-    saveRDS(bands_all, glue::glue("{dir_cache}/cytoBand.{genome}.rds"))
+    saveRDS(bands_all, path_cytoband)
   } else {
-    bands_all <- readRDS(glue::glue("{dir_cache}/cytoBand.{genome}.rds"))
+    bands_all <- readRDS(path_cytoband)
   }
+  stop_if_null(bands_all, "cytoBand could not be created or loaded.")
+  bands_all
+}
+
+retrive_cytoband <- function(data, genome) {
+  bands_all <- ensure_cytoband(genome = genome)
 
   chroms <- unique(c(data$seqnames1, data$seqnames2)) |>
     as.character()
@@ -42,7 +42,7 @@ retrive_cytoband <- function(data, genome) {
   cols <- c(cols, posCols) |>
     as.data.frame() |>
     tibble::rownames_to_column("type") |>
-    dplyr::rename(mycol = `c(cols, posCols)`)
+    dplyr::rename(band_fill = `c(cols, posCols)`)
 
   dat <- bands |>
     dplyr::mutate(chromStart = chromStart + 1, name = bnames) |>
@@ -54,32 +54,30 @@ retrive_cytoband <- function(data, genome) {
   dat
 }
 
-#' @importFrom ggplot2 ggproto Stat
-#' @importFrom dplyr bind_rows distinct filter first left_join mutate row_number select
 StatIdeogram <- ggplot2::ggproto(
   "StatIdeogram",
   ggplot2::Stat,
   required_aes = c(
-    "seqnames1", "start1", "end1",
-    "seqnames2", "start2", "end2"
+    "seqnames1", "start1", "end1", "seqnames2", "start2", "end2"
   ),
   extra_params = c(
-    ggplot2::Stat$extra_params, "genome", "highlight", "fontsize"
+    ggplot2::Stat$extra_params,
+    "genome", "highlight", "width_ratio", "length_ratio"
   ),
   dropped_aes = c(
     "seqnames1", "start1", "end1", "seqnames2", "start2", "end2", "fill"
   ),
   compute_group = function(
-    data, scales, genome = "hg19", highlight = TRUE, fontsize = 10
+    data, scales,
+    genome = "hg19", highlight = TRUE, width_ratio = 1 / 30, length_ratio = 0.8
   ) {
     bands <- retrive_cytoband(data, genome = genome)
-    max_y <- max(
-      ((data$start1 + data$end2) / 2) - data$start1, na.rm = TRUE
-    )
+    max_y <- max(((data$start1 + data$end2) / 2) - data$start1, na.rm = TRUE)
     max_x <- max((data$end1 + data$end2) / 2, na.rm = TRUE)
     min_x <- min((data$start1 + data$start2) / 2, na.rm = TRUE)
-    .scale <- ((max_x - min_x) * 0.8) / max(bands$end)
-    .height <- max_y / 50
+    res <- data$end1[1] - data$start1[1] + 1
+    .scale <- ((max_x - min_x) * length_ratio) / max(bands$end)
+    .height <- max_y * width_ratio
     # ======================================================================== #
     #   ^                                                                      #
     #   | +--------------------------------------------------------+           #
@@ -99,7 +97,7 @@ StatIdeogram <- ggplot2::ggproto(
         y = (.height * (dplyr::row_number() - 1)) +
           (dplyr::row_number() * (.height / 2)) +
           max_y +
-          .height
+          res / 2
       )
     dat_band <- bands |>
       dplyr::left_join(ys, by = "seqname") |>
@@ -111,19 +109,17 @@ StatIdeogram <- ggplot2::ggproto(
         x_scale = x * .scale,
         xmax_scale = xmax * .scale,
         x = x_scale + min_x - dplyr::first(x_scale),
-        xmax = xmax_scale + min_x - dplyr::first(x_scale),
-        fontsize = fontsize
+        xmax = xmax_scale + min_x - dplyr::first(x_scale)
       ) |>
-      dplyr::select(x, y, xmax, ymax, type, seqname, mycol, fontsize)
+      dplyr::select(x, y, xmax, ymax, type, seqname, band_fill)
     dat_text <- dat_band |>
       dplyr::group_by(seqname) |>
       dplyr::filter(xmax == max(xmax)) |>
       dplyr::mutate(
         y = (ymax + y) / 2,
         x = xmax + (max(dat_band$xmax) - min(dat_band$x)) / 50,
-        fontsize = fontsize,
         type = "text",
-        mycol = "black"
+        band_fill = "black"
       )
     dat_boundary <- NULL
     if (highlight) {
@@ -134,8 +130,7 @@ StatIdeogram <- ggplot2::ggproto(
           xmax = max(data$end1) * .scale + min_x,
           ymax = ymax + .height / 10, y = y - .height / 10,
           type = "boundary",
-          mycol = "red",
-          fontsize = fontsize
+          band_fill = "red"
         )
     }
     dat <- dplyr::bind_rows(dat_boundary, dat_band, dat_text)
@@ -143,15 +138,16 @@ StatIdeogram <- ggplot2::ggproto(
   }
 )
 
-#' @importFrom ggplot2 ggproto Geom
-#' @importFrom grid gList gpar nullGrob polygonGrob
-#' @importFrom dplyr filter
 GeomIdeogram <- ggplot2::ggproto(
   "GeomIdeogram",
   ggplot2::Geom,
-  required_aes = c("x", "y", "xmax", "ymax", "type", "seqname", "mycol", "fontsize"),
+  required_aes = c("x", "y", "xmax", "ymax", "type", "seqname", "band_fill"),
+  extra_params = c(ggplot2::Geom$extra_params, "fontsize"),
   draw_key = ggplot2::draw_key_blank,
-  draw_panel = function(data, panel_params, coord) {
+  draw_panel = function(
+    data, panel_params, coord,
+    fontsize = 10, colour = "red", fill = "#FFE3E680"
+  ) {
     coords <- coord$transform(data, panel_params)
     coords_boundary <- coords |>
       dplyr::filter(type == "boundary")
@@ -167,7 +163,7 @@ GeomIdeogram <- ggplot2::ggproto(
           coords_boundary$y, coords_boundary$ymax
         ),
         id = rep(seq_len(nrow(coords_boundary)), 4),
-        gp = grid::gpar(col = "red", fill = "#FFE3E680"),
+        gp = grid::gpar(col = colour, fill = fill),
         default.units = "native"
       )
     }
@@ -177,7 +173,7 @@ GeomIdeogram <- ggplot2::ggproto(
       x = c(coords_band$x, coords_band$x, coords_band$xmax, coords_band$xmax),
       y = c(coords_band$ymax, coords_band$y, coords_band$y, coords_band$ymax),
       id = rep(seq_len(nrow(coords_band)), 4),
-      gp = grid::gpar(col = "black", fill = coords_band$mycol),
+      gp = grid::gpar(col = "black", fill = coords_band$band_fill),
       default.units = "native"
     )
     coords_text <- coords |>
@@ -186,7 +182,7 @@ GeomIdeogram <- ggplot2::ggproto(
       label = coords_text$seqname,
       x = coords_text$x, y = coords_text$y,
       just = c("left", "center"),
-      gp = grid::gpar(col = "black", fontsize = coords_text$fontsize),
+      gp = grid::gpar(col = "black", fontsize = fontsize),
       default.units = "native"
     )
     grid::gList(grob_band, grob_boundary, grob_text)
@@ -201,6 +197,8 @@ GeomIdeogram <- ggplot2::ggproto(
 #'  * `genome`: The genome name. Default is `"hg19"`.
 #'  * `highlight`: Whether to highlight the boundary of the chromosome. Default is `TRUE`.
 #'  * `fontsize`: The font size of the chromosome name. Default is `10`.
+#'  * `width_ratio`: The ratio of the width of each chromosome ideogram relative to the height of the Hi-C plot. Default is `1/30`.
+#'  * `length_ratio`: The ratio of the length of each chromosome ideogram relative to the width of the Hi-C plot. Default is `0.8`.
 #' @details
 #' Requires the following aesthetics:
 #' * seqnames1
@@ -213,18 +211,15 @@ GeomIdeogram <- ggplot2::ggproto(
 #' @examples
 #' \dontrun{
 #' }
-#' @importFrom ggplot2 layer
 #' @export geom_ideogram
 geom_ideogram <- function(
-    mapping = NULL, data = NULL,
-    stat = StatIdeogram, position = "identity",
-    na.rm = FALSE, show.legend = NA,
-    inherit.aes = TRUE, ...
+  mapping = NULL, data = NULL, stat = StatIdeogram, position = "identity",
+  na.rm = FALSE, show.legend = NA, inherit.aes = TRUE, check.param = FALSE, ...
 ) {
   ggplot2::layer(
     geom = GeomIdeogram, mapping = mapping, data = data, stat = stat,
     position = position, show.legend = show.legend, inherit.aes = inherit.aes,
-    params = list(na.rm = na.rm, ...)
+    check.param = FALSE, params = list(na.rm = na.rm, ...)
   )
 }
 
