@@ -9,13 +9,14 @@ from utils import subset_chr_cooler
 
 
 # %%
-file_mcool = Path("~/projects/ONT/analysis/3c/cooler/GYB/GYB.chrs.mcool").expanduser()
-resolution = 100000
-clr = cooler.Cooler(f"{file_mcool}::/resolutions/{resolution}")
+FILE_COOLER = Path("~/projects/ONT/analysis/3c/cooler/GYB/GYB.chrs.mcool").expanduser()
+RESOLUTIONS = [100000, 5000]
 
 
 # %%
-clr_chr4_11 = subset_chr_cooler(clr, ["chr4", "chr11"], "../inst/extdata/cooler/chr4_11-1mb.cool")
+for resolution in RESOLUTIONS:
+    clr = cooler.Cooler(f"{FILE_COOLER}::/resolutions/{resolution}")
+    clr_chr4_11 = subset_chr_cooler(clr, ["chr4", "chr11"], f"../inst/extdata/cooler/chr4_11-{int(resolution / 1000)}kb.cool")
 
 
 # %%
