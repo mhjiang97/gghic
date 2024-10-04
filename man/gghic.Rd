@@ -9,6 +9,7 @@ gghic(
   score_column = "balanced",
   scale_method = log10,
   ideogram = TRUE,
+  annotation = TRUE,
   ...
 )
 }
@@ -22,7 +23,9 @@ Default is \code{"balanced"}.}
 
 \item{ideogram}{Whether to add ideogram or not. Default is \code{TRUE}.}
 
-\item{...}{Other parameters passed to \code{\link[=geom_ideogram]{geom_ideogram()}}.}
+\item{annotation}{Whether to add annotation or not. Default is \code{TRUE}.}
+
+\item{...}{Other parameters passed to \code{\link[=geom_ideogram]{geom_ideogram()}}, \code{\link[=geom_annotation]{geom_annotation()}}.}
 }
 \value{
 A ggplot object.
