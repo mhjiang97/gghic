@@ -12,6 +12,7 @@ geom_hic(
   na.rm = FALSE,
   show.legend = NA,
   inherit.aes = TRUE,
+  check.param = FALSE,
   ...
 )
 }

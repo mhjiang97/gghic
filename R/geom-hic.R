@@ -1,15 +1,11 @@
-#' @importFrom ggplot2 ggproto Stat
-#' @importFrom dplyr mutate
 StatHic <- ggplot2::ggproto(
   "StatHic",
   ggplot2::Stat,
   required_aes = c(
-    "seqnames1", "start1", "end1",
-    "seqnames2", "start2", "end2",
-    "fill"
+    "seqnames1", "start1", "end1", "seqnames2", "start2", "end2", "fill"
   ),
   compute_group = function(data, scales) {
-    data |>
+    dat <- data |>
       dplyr::mutate(
         x = (end1 + start2) / 2,
         xmin = (start1 + start2) / 2,
@@ -20,15 +16,17 @@ StatHic <- ggplot2::ggproto(
         ymax = (xmax - start1),
         yend = (xend - end1)
       )
+
+    dat
   }
 )
 
-#' @importFrom ggplot2 ggproto Geom draw_key_polygon
-#' @importFrom grid polygonGrob gpar
 GeomHic <- ggplot2::ggproto(
   "GeomHic",
   ggplot2::Geom,
-  required_aes = c("x", "xmin", "xmax", "xend", "y", "ymin", "ymax", "yend", "fill"),
+  required_aes = c(
+    "x", "xmin", "xmax", "xend", "y", "ymin", "ymax", "yend", "fill"
+  ),
   draw_key = ggplot2::draw_key_polygon,
   draw_panel = function(data, panel_params, coord) {
     coords <- coord$transform(data, panel_params)
@@ -61,14 +59,12 @@ GeomHic <- ggplot2::ggproto(
 #' }
 #' @export geom_hic
 geom_hic <- function(
-  mapping = NULL, data = NULL,
-  stat = StatHic, position = "identity",
-  na.rm = FALSE, show.legend = NA,
-  inherit.aes = TRUE, ...
+  mapping = NULL, data = NULL, stat = StatHic, position = "identity",
+  na.rm = FALSE, show.legend = NA, inherit.aes = TRUE, check.param = FALSE, ...
 ) {
   ggplot2::layer(
     geom = GeomHic, mapping = mapping, data = data, stat = stat,
     position = position, show.legend = show.legend, inherit.aes = inherit.aes,
-    params = list(na.rm = na.rm, ...)
+    check.param = FALSE, params = list(na.rm = na.rm, ...)
   )
 }
